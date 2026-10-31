@@ -1,0 +1,52 @@
+/* Design tokens ported from the mobile app's src/theme.ts (same values).
+   Text colours keep at least 4.5:1 contrast on both background and surface. */
+:root {
+  --color-background: #f7f5f0;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f1eee7;
+  --color-border: #e4dfd5;
+  --color-text: #14233a;
+  --color-text-secondary: #4e5d6e;
+  --color-text-tertiary: #5f6b79;
+  --color-accent: #0f766e;
+  --color-accent-pressed: #0b5e58;
+  --color-accent-soft: #e3f1ef;
+  --color-accent-on-navy: #5cc8b8;
+  --color-on-accent: #ffffff;
+  --color-notice: #8a5300;
+  --color-notice-soft: #fbf1dc;
+  --color-danger: #b42318;
+  --color-danger-soft: #fdecea;
+
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 12px;
+  --space-lg: 16px;
+  --space-xl: 20px;
+  --space-xxl: 28px;
+  --space-xxxl: 40px;
+
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-pill: 999px;
+
+  --touch-target: 48px;
+  --content-max-width: 960px;
+  --form-max-width: 640px;
+
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --text-large-title: 700 2rem/1.2 var(--font-family);
+  --text-title: 700 1.375rem/1.3 var(--font-family);
+  --text-headline: 600 1.0625rem/1.3 var(--font-family);
+  --text-body: 400 1rem/1.4 var(--font-family);
+  --text-callout: 400 0.9375rem/1.4 var(--font-family);
+  --text-label: 600 0.875rem/1.35 var(--font-family);
+  --text-caption: 400 0.8125rem/1.4 var(--font-family);
+
+  --shadow-card: 0 1px 2px rgb(20 35 58 / 0.04);
+  --focus-ring: 0 0 0 3px rgb(15 118 110 / 0.35);
+
+  --sidebar-width: 248px;
+  --tabbar-height: 64px;
+}
