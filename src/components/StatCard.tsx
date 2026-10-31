@@ -4,13 +4,14 @@ import { colors, radius, spacing, typography } from '../theme';
 
 interface StatCardProps {
   label: string;
-  value: number;
+  // null while loading.
+  value: number | null;
 }
 
 export function StatCard({ label, value }: StatCardProps) {
   return (
-    <View style={styles.card} accessible accessibilityLabel={`${label}: ${value}`}>
-      <Text style={styles.value}>{value}</Text>
+    <View style={styles.card} accessible accessibilityLabel={`${label}: ${value ?? 'loading'}`}>
+      <Text style={styles.value}>{value ?? '–'}</Text>
       <Text style={styles.label} numberOfLines={2}>
         {label}
       </Text>

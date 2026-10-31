@@ -7,7 +7,8 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.snehverma.oglog"
     },
     "android": {
       "adaptiveIcon": {
@@ -16,10 +17,41 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.snehverma.oglog",
+      "allowBackup": false,
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-sqlite",
+        {
+          "useSQLCipher": true
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "OG-LOG uses Face ID to unlock your logbook."
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "OG-LOG uses Face ID to unlock your logbook."
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ed5211a5-418a-48d4-b768-11d288e297a5"
+      }
     }
   }
 }

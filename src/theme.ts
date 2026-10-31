@@ -18,6 +18,7 @@ export const colors = {
   notice: '#8A5300',
   noticeSoft: '#FBF1DC',
   danger: '#B42318',
+  dangerSoft: '#FDECEA',
 } as const;
 
 export const spacing = {

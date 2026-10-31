@@ -28,7 +28,7 @@ export function FormField({ label, hint, error, ...inputProps }: FormFieldProps)
           setFocused(false);
           inputProps.onBlur?.(event);
         }}
-        style={[styles.input, focused && styles.focused, error ? styles.invalid : null]}
+        style={[styles.input, inputProps.multiline && styles.multiline, focused && styles.focused, error ? styles.invalid : null]}
       />
       {error ? (
         <Text style={styles.error}>{error}</Text>
@@ -53,6 +53,10 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     fontSize: 16,
     color: colors.text,
+  },
+  multiline: {
+    minHeight: 88,
+    textAlignVertical: 'top',
   },
   focused: {
     borderColor: colors.accent,

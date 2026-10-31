@@ -2,7 +2,7 @@ import { Pressable, StyleSheet, Text } from 'react-native';
 
 import { colors, radius, spacing, touchTarget } from '../theme';
 
-type ButtonVariant = 'primary' | 'secondary' | 'plain';
+type ButtonVariant = 'primary' | 'secondary' | 'plain' | 'danger';
 
 interface ButtonProps {
   label: string;
@@ -52,6 +52,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
     paddingHorizontal: spacing.md,
   },
+  danger: {
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
   disabled: {
     opacity: 0.45,
   },
@@ -65,10 +70,12 @@ const pressedStyles = StyleSheet.create({
   primary: { backgroundColor: colors.accentPressed },
   secondary: { backgroundColor: colors.surfaceMuted },
   plain: { opacity: 0.6 },
+  danger: { backgroundColor: colors.dangerSoft },
 });
 
 const labelStyles = StyleSheet.create({
   primary: { color: colors.onAccent },
   secondary: { color: colors.text },
   plain: { color: colors.accent },
+  danger: { color: colors.danger },
 });
