@@ -1,8 +1,10 @@
 # OG-LOG database (Supabase / PostgreSQL)
 
-Status: **design and local tests only.** This migration has not been applied to
-any Supabase project. Use synthetic data only until security testing and
-legal/institutional review are complete. Nothing here is a compliance claim.
+Status: **verified locally in PGlite only.** The migration has not yet been
+applied to any Supabase project; see [DEVELOPMENT.md](DEVELOPMENT.md) to do
+that safely and run the real-project tests. Use synthetic data only until
+security testing and legal/institutional review are complete. Nothing here is
+a compliance claim.
 
 ## Contents
 
@@ -11,10 +13,14 @@ legal/institutional review are complete. Nothing here is a compliance claim.
 | `migrations/20261031120000_case_logbook_schema.sql` | Tables, constraints, triggers, privileges and Row Level Security. Creates objects only; drops nothing. |
 | `tests/supabase-auth-shim.sql` | **Test-only** stand-in for Supabase's `auth` schema, API roles and default privileges. Never apply it to a real project. |
 | `tests/harness.ts` | Runs the shim and migrations in PGlite (real PostgreSQL in WebAssembly) and executes queries as user A, user B, `anon` or `service_role`. |
-| `tests/rls.test.ts` | Two-user authorization tests. |
+| `tests/rls.test.ts` | Two-user authorization, claims and limit tests, run under both Supabase default modes. |
 | `tests/caseRows.test.ts` | Checks the shared domain model and the schema agree. |
+| `tests/integrationConfig.test.ts` | Checks the integration-test safety guard (secret keys refused, values never printed). |
+| `integration/` | The same scenarios against a **real** Supabase project via Auth and the Data API (`npm run test:integration`; skipped unless configured). |
+| `DEVELOPMENT.md` | How to link a development project, apply the migration without resetting anything, and run the integration tests. |
 
-Run with `npm test` in `web/` (no credentials, no network, no Docker).
+`npm test` in `web/` runs everything except `integration/` (no credentials, no
+network, no Docker).
 
 ## Tables
 
@@ -25,7 +31,8 @@ Run with `npm test` in `web/` (no credentials, no network, no Docker).
 ## Authorization
 
 Two layers. **Privileges**: `anon` gets nothing; `authenticated` gets only the
-commands listed below. **RLS** then limits those commands to the caller's own
+commands listed below; `service_role` (trusted server code only) gets row
+access explicitly. **RLS** then limits `authenticated` to the caller's own
 rows, using `auth.uid()` from the verified JWT, never a client-supplied ID.
 
 | Table | Policy | Effect |
@@ -37,18 +44,31 @@ rows, using `auth.uid()` from the verified JWT, never a client-supplied ID.
 | cases | delete own | Only your cases can be deleted. |
 | case_attachments | read own / insert own / delete own | No update at all: attachments are replaced, not edited. |
 
-The **service-role key bypasses RLS**. It must only ever be used in trusted
-server code (e.g. a future Edge Function), never in the browser or the repo.
+The **service role / secret key bypasses RLS**. It must only ever be used in
+trusted server code, never in the browser, tests or the repo.
+
+CHECK constraints use only built-in functions: PostgreSQL checks EXECUTE
+permission on functions inside constraints at write time, and hardened
+Supabase projects do not grant EXECUTE on new functions to `PUBLIC`.
+
+## Supabase project defaults covered locally
+
+The suite runs twice:
+
+- **exposed** (current default): new public tables are granted to the API roles automatically; the migration's REVOKEs must take effect.
+- **hardened** ("Automatically expose new tables" off, function EXECUTE revoked from `PUBLIC`, as Supabase recommends): the migration's explicit GRANTs must be sufficient.
 
 ## What the local tests prove, and what they do not
 
-They prove the SQL in the migration behaves as intended in real PostgreSQL
-under the `authenticated` role, including attempts by user B to read, list,
-count, update, delete, re-own and attach to user A's records (by ID and with
-unfiltered statements, with and without `RETURNING`). Each security rule was
-deliberately weakened once to confirm a test fails.
+They prove the SQL behaves as intended in real PostgreSQL under the
+`authenticated` role: user B cannot read, list, count, update, delete, re-own or
+attach to user A's records (by ID and with unfiltered statements, with and
+without `RETURNING`); malformed, empty or stale user IDs fail closed; private
+functions are not callable; and the length/size limits are exact. Each security
+rule was deliberately weakened once to confirm a test fails.
 
-They do **not** cover: Supabase's real Auth service and JWT verification, the
-PostgREST Data API in front of the database, Supabase's exact role and grant
-setup, Storage, or the PostgreSQL version Supabase runs (PGlite is 18.x).
-Those need a Supabase test project or the Supabase local stack.
+They do **not** cover Supabase's real Auth service and JWT verification, the
+PostgREST Data API, Supabase's exact roles and grants, whether triggers on
+`auth.users` run as expected on the platform, which schemas the project
+exposes, Storage, or the PostgreSQL version Supabase runs (PGlite is 18.x).
+`integration/` covers most of those once a development project is configured.

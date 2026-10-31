@@ -20,12 +20,27 @@ export interface QueryFailure {
   message: string;
 }
 
+// Supabase project defaults the migration must work under:
+// - 'exposed': current default. New public tables are granted to the API
+//   roles automatically, so the migration's REVOKEs must take effect.
+// - 'hardened': "Automatically expose new tables" off and EXECUTE on new
+//   functions revoked from PUBLIC, as Supabase recommends and plans to make
+//   the platform default. The migration's explicit GRANTs must suffice.
+export type SupabaseDefaults = 'exposed' | 'hardened';
+
+export const SUPABASE_DEFAULTS: SupabaseDefaults[] = ['exposed', 'hardened'];
+
 export class TestDatabase {
   private constructor(readonly db: PGlite) {}
 
-  static async create(): Promise<TestDatabase> {
+  static async create(defaults: SupabaseDefaults = 'exposed'): Promise<TestDatabase> {
     const db = new PGlite();
-    await db.exec(shim);
+    if (defaults === 'exposed') {
+      await db.exec(shim);
+    } else {
+      await db.exec(shim.replace(/^alter default privileges in schema public grant[^;]*;$/gm, ''));
+      await db.exec('alter default privileges revoke execute on functions from public;');
+    }
     for (const name of Object.keys(migrations).sort()) {
       await db.exec(migrations[name]!);
     }
@@ -49,6 +64,13 @@ export class TestDatabase {
 
   asUser<T>(userId: string, work: (query: Query) => Promise<T>): Promise<T> {
     return this.withRole('authenticated', { sub: userId, role: 'authenticated' }, work);
+  }
+
+  // A signed-in role with arbitrary claims, e.g. a malformed or stale `sub`.
+  // (Supabase verifies JWT signatures before claims reach Postgres; this only
+  // checks how the database treats unusual claim values.)
+  asAuthenticatedWithClaims<T>(claims: Record<string, string>, work: (query: Query) => Promise<T>): Promise<T> {
+    return this.withRole('authenticated', { role: 'authenticated', ...claims }, work);
   }
 
   // A signed-in role whose token has no user ID: must still see nothing.

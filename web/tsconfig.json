@@ -20,5 +20,5 @@
       "@og-log/single-flight": ["../src/utils/singleFlight.ts"]
     }
   },
-  "include": ["src", "supabase/tests", "../src/domain", "../src/utils/singleFlight.ts"]
+  "include": ["src", "supabase/tests", "supabase/integration", "../src/domain", "../src/utils/singleFlight.ts"]
 }

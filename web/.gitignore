@@ -1,0 +1,8 @@
+# Local environment files may hold project URLs, keys and test passwords.
+# Only the placeholder example is committed.
+.env*
+!.env.integration.example
+
+# Supabase CLI local state (project link, cached credentials references)
+supabase/.temp/
+supabase/.branches/

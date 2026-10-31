@@ -10,26 +10,16 @@
 -- key bypasses RLS and must only ever be used server-side.
 
 -- ---------------------------------------------------------------------------
--- Helper functions live in a schema the Data API does not expose, so they
+-- Trigger functions live in a schema the Data API does not expose, so they
 -- cannot be called directly as RPC endpoints.
+--
+-- CHECK constraints deliberately use only built-in functions: PostgreSQL
+-- checks EXECUTE permission on functions inside constraints whenever a row is
+-- written, and hardened Supabase projects do not grant EXECUTE on new
+-- functions to PUBLIC.
 -- ---------------------------------------------------------------------------
 create schema if not exists private;
 revoke all on schema private from public;
-
--- True when `value` is a JSON object whose values are all strings: the shape of
--- a case section (field key -> free text), matching the app's SectionFields.
-create function private.is_text_map(value jsonb)
-returns boolean
-language sql
-immutable
-strict
-set search_path = ''
-as $$
-  select jsonb_typeof(value) = 'object'
-     and not exists (
-       select 1 from jsonb_each(value) as entry where jsonb_typeof(entry.value) <> 'string'
-     )
-$$;
 
 -- ---------------------------------------------------------------------------
 -- profiles: one row per Supabase Auth user. No email or patient data here.
@@ -78,8 +68,12 @@ create table public.cases (
   constraint cases_completed_requires_details check (
     status <> 'completed' or (btrim(diagnosis) <> '' and role is not null)
   ),
+  -- Each section is a JSON object whose values are all strings (the app's
+  -- SectionFields): field key -> free text.
   constraint cases_sections_are_text_maps check (
-    private.is_text_map(preop) and private.is_text_map(ot) and private.is_text_map(postop)
+    jsonb_typeof(preop) = 'object' and not jsonb_path_exists(preop, '$.* ? (@.type() != "string")')
+    and jsonb_typeof(ot) = 'object' and not jsonb_path_exists(ot, '$.* ? (@.type() != "string")')
+    and jsonb_typeof(postop) = 'object' and not jsonb_path_exists(postop, '$.* ? (@.type() != "string")')
   ),
   constraint cases_sections_size check (
     octet_length(preop::text) <= 32768 and octet_length(ot::text) <= 32768 and octet_length(postop::text) <= 32768
@@ -250,6 +244,11 @@ grant select, update (display_name) on public.profiles to authenticated;
 grant select, insert, update, delete on public.cases to authenticated;
 -- No UPDATE: attachments are replaced (insert + delete), never edited by users.
 grant select, insert, delete on public.case_attachments to authenticated;
+
+-- Trusted server-side code only (secret key; e.g. future upload verification
+-- and account deletion). Granted explicitly so it works whether or not the
+-- project exposes new tables automatically. service_role bypasses RLS.
+grant select, insert, update, delete on public.profiles, public.cases, public.case_attachments to service_role;
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
