@@ -29,7 +29,7 @@ The CLI is run with a pinned version through npx (nothing installed globally):
 ```bash
 cd web
 npx supabase@2.122.0 login                         # opens the browser; token stays in the CLI's own storage
-npx supabase@2.122.0 init                          # creates supabase/config.toml only (no secrets)
+npx supabase@2.122.0 init                          # creates supabase/config.toml and supabase/.gitignore (no secrets)
 npx supabase@2.122.0 link --project-ref <ref>      # <ref> is in the project URL; type the DB password at the prompt
 npx supabase@2.122.0 db push --dry-run             # must list exactly 20261031120000_case_logbook_schema.sql
 npx supabase@2.122.0 db push                       # applies it; confirm when asked
@@ -50,7 +50,8 @@ migration into the SQL editor: it would not be recorded as applied.
 - **Advisors → Security Advisor**: no "RLS disabled" or exposed-function warnings
   for `profiles`, `cases`, `case_attachments`.
 - **Table Editor**: the three tables show RLS enabled.
-- **Project Settings → Infrastructure**: note the PostgreSQL version (local tests use 18.x).
+- **Project Settings → Infrastructure**: note the PostgreSQL version. OG-LOG-DEV runs
+  17.11; the local tests use 18.6 (see "PostgreSQL versions" below).
 
 ## 4. Create two synthetic test users (after step 2)
 
@@ -77,26 +78,87 @@ Use the **publishable key** (`sb_publishable_…`) or the legacy **anon** key.
 The tests refuse secret/service-role keys, because those bypass RLS and would
 make the results meaningless. `OGLOG_IT_CONFIRM` must be `synthetic-dev-project`.
 
-Every row the tests write is fictional (`ITEST…`) and is deleted by its owner
-at the end. Share only the pass/fail summary, never the `.env` file.
+Share only the pass/fail summary, never the `.env` file.
+
+### How each run's data is isolated and cleaned up
+
+- Each run gets a unique marker such as `ITEST-MH3K2Q1A-4F9C02BD` (time plus
+  random). Every case the run writes, or tries to write, has a `procedure`
+  starting with that marker. The marker uses only letters, digits and hyphens,
+  so it is safe in a `LIKE` pattern.
+- Cleanup (`afterAll`) runs as each test user, so RLS limits it to that user's
+  own rows. It deletes only cases whose procedure starts with **this run's**
+  marker; attachment records go with their case (`on delete cascade`). Rows
+  from other runs, and any case not carrying the marker, are never touched.
+  User A's original display name, read before the tests, is put back.
+- Cleanup then **verifies**, as each user, that no case with the marker, no
+  case whose ID the run recorded, and no attachment record the run attempted
+  (by ID or by case) remains, and that A's display name equals the original.
+  Every row the run could write is owned by A or B, so the two users' checks
+  together cover the whole run.
+- Both sessions are then signed out (`scope: 'local'`: this run's sessions only).
+- Every cleanup step checks the API result. All steps run even if one fails, and
+  any failure fails the run with an `afterAll` error naming the failed steps
+  ("synthetic rows may remain"). Vitest reports it **in addition to** any test
+  failures, so it never hides the original failure.
+- If a run is killed before `afterAll`, its rows remain. Find them read-only in
+  the SQL editor with `select id, procedure from public.cases where procedure like 'ITEST-%';`
+  and remove them by signing in as the owning test user, or delete them in the
+  Table Editor after checking each one is an `ITEST` row.
+
+Sign-in itself still leaves Supabase Auth records (sessions, audit log, last
+sign-in time); those are not test data and are not removed.
 
 ## Integration test plan (`integration/rls.integration.test.ts`)
 
 Runs through Supabase Auth and the Data API, signed in as A and B with the
-publishable key, exactly as browsers will be:
+publishable key, exactly as browsers will be. "Empty, no error" means RLS
+filtered the rows out; a `42501` there would mean a missing grant instead, so
+the two are asserted separately.
 
 | # | Scenario | Expected |
 |---|---|---|
 | 1 | A and B sign in; A creates a case without `owner_id` | Two distinct users; `owner_id` = A (taken from the session) |
 | 2 | Profiles | Each user has a trigger-created profile and sees only their own |
-| 3 | B selects A's case by ID, lists all cases, searches A's text | Empty results, no error |
-| 4 | B updates/deletes A's case (with and without returning rows) | No change to A's case |
+| 3 | B selects A's case by ID, lists, counts, searches A's text | Empty / count 0, no error; A's own search finds it |
+| 4 | B updates/deletes A's case (with and without returning rows) | No error, no rows; A's case unchanged |
 | 5 | B inserts a case with `owner_id` = A | Rejected, `42501` |
 | 6 | A sets `owner_id` = B on own case | Rejected, `42501`; still owned by A |
 | 7 | Same reference twice for A; same reference for B | `23505` for A; allowed for B |
 | 8 | B attaches to A's case (as B / as A); A attaches to own case; A edits attachment | `23503` / `42501`; A's starts `pending`; edit rejected `42501` |
-| 9 | Anonymous (no session) reads each table | Rejected, `42501` |
-| 10 | Call `private.handle_new_user` via the API (`private` schema and `public`) | Error, no data |
-| 11 | A renames own profile; B renames A's | Allowed / no rows changed |
+| 9 | B reads, counts, lists and deletes (with and without returning rows) A's attachment | Empty / count 0, no error; A's attachment still exists, unchanged |
+| 10 | Procedure 300 / 301 characters; diagnosis 1000 / 1001 | Allowed / `23514` |
+| 11 | Completed case without diagnosis, with blank diagnosis, without role; complete one; complete a draft without role | `23514` ×3; allowed; `23514` and still a draft |
+| 12 | Anonymous (no session) reads each table | Rejected, `42501` |
+| 13 | Call `handle_new_user` via the API in the `private` schema / in `public` | `PGRST106` (schema not exposed) / `PGRST202` (no such function) |
+| 14 | A renames own profile; B renames A's (with and without returning rows) | Allowed / no error, no rows; A re-reads the name unchanged |
 
 If any test fails, stop and share the test names and error codes only.
+
+## What has been verified where
+
+Verified against the real OG-LOG-DEV project (14/14 on 2026-11-01): every row
+in the table above, which covers the RLS policies and grants for all three
+tables through real Auth sessions and PostgREST, the profile trigger on
+`auth.users`, the attachment owner/case foreign key and `pending` status, the
+length limits and completed-case rule, and that `private` is not exposed.
+
+Local PGlite only (`npm test`): malformed, empty and stale JWT claims; server
+timestamps and per-section update times; immutable IDs; unfiltered
+update/delete; profile insert/delete denial; section JSON shape and 32 KB size;
+reference format; attachment path, file-type and size checks; `service_role`
+grants; behaviour under both "expose new tables" settings.
+
+Not tested anywhere yet: forged or expired tokens against the real API, token
+refresh, whether sign-out revokes sessions server-side, the project's Security
+Advisor results and settings, GraphQL and Realtime access, Storage.
+
+### PostgreSQL versions
+
+The OG-LOG-DEV project runs **PostgreSQL 17.11**; the local tests run in
+PGlite, which is **PostgreSQL 18.6**. Passing local tests therefore shows the
+SQL behaves as intended on 18.6, not that it behaves the same on the remote
+database. The integration suite confirms the scenarios above on 17.11, but the
+"Local PGlite only" items have not been run on 17.11 and still need verifying
+against the remote database (or a matching 17.x local stack) before they are
+relied on. Re-check the version after any Supabase platform upgrade.

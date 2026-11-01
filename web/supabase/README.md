@@ -1,8 +1,9 @@
 # OG-LOG database (Supabase / PostgreSQL)
 
-Status: **verified locally in PGlite only.** The migration has not yet been
-applied to any Supabase project; see [DEVELOPMENT.md](DEVELOPMENT.md) to do
-that safely and run the real-project tests. Use synthetic data only until
+Status: the migration is **applied to the OG-LOG-DEV development project**
+and must no longer be edited (add new migrations instead). The two-user
+integration suite passes there (14/14); see [DEVELOPMENT.md](DEVELOPMENT.md)
+for what that covers and what is still PGlite-only or untested. Use synthetic data only until
 security testing and legal/institutional review are complete. Nothing here is
 a compliance claim.
 
@@ -16,7 +17,8 @@ a compliance claim.
 | `tests/rls.test.ts` | Two-user authorization, claims and limit tests, run under both Supabase default modes. |
 | `tests/caseRows.test.ts` | Checks the shared domain model and the schema agree. |
 | `tests/integrationConfig.test.ts` | Checks the integration-test safety guard (secret keys refused, values never printed). |
-| `integration/` | The same scenarios against a **real** Supabase project via Auth and the Data API (`npm run test:integration`; skipped unless configured). |
+| `tests/integrationCleanup.test.ts` | Checks the integration run marker and that cleanup failures are reported, not swallowed. |
+| `integration/` | Two-user scenarios against a **real** Supabase project via Auth and the Data API (`npm run test:integration`; skipped unless configured). Each run's rows carry a unique marker and are deleted and verified afterwards. |
 | `DEVELOPMENT.md` | How to link a development project, apply the migration without resetting anything, and run the integration tests. |
 
 `npm test` in `web/` runs everything except `integration/` (no credentials, no
@@ -71,4 +73,5 @@ They do **not** cover Supabase's real Auth service and JWT verification, the
 PostgREST Data API, Supabase's exact roles and grants, whether triggers on
 `auth.users` run as expected on the platform, which schemas the project
 exposes, Storage, or the PostgreSQL version Supabase runs (PGlite is 18.x).
-`integration/` covers most of those once a development project is configured.
+`integration/` covers the API, grants, trigger and schema exposure on the
+development project; DEVELOPMENT.md lists exactly what remains PGlite-only.
