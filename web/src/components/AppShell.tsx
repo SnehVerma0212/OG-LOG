@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { Link, NavLink, Outlet, useLocation } from 'react-router';
 
+import { useAuthService, useAuthState } from '../auth/AuthContext';
 import { useRepository } from '../data/RepositoryContext';
 import { LogoMark, NavIcon, type NavIconName } from './Icons';
-import { ButtonLink, Notice } from './ui';
+import { Button, ButtonLink } from './ui';
 
 const NAV: { to: string; label: string; icon: NavIconName; end?: boolean }[] = [
   { to: '/', label: 'Dashboard', icon: 'home', end: true },
@@ -30,6 +31,9 @@ export function AppShell() {
   const mainRef = useRef<HTMLElement>(null);
   const firstRender = useRef(true);
   const repository = useRepository();
+  const auth = useAuthService();
+  const authState = useAuthState();
+  const email = authState.status === 'signedIn' ? authState.user.email : null;
 
   // After navigating, move focus to the new page so keyboard and screen
   // reader users start at its content.
@@ -69,15 +73,15 @@ export function AppShell() {
         </nav>
         <div className="sidebar__footer">
           <p className="caption">{repository.storageDescription}</p>
+          {email ? <p className="caption">Signed in as {email}</p> : null}
+          <Button variant="secondary" block onClick={() => void auth.signOut()}>
+            Sign Out
+          </Button>
         </div>
       </aside>
 
       <main id="main" className="shell__main" ref={mainRef} tabIndex={-1}>
         <div className="shell__content">
-          <Notice title="Demo mode: sample data only">
-            {repository.storageDescription} Nothing is sent to a server, and there are no accounts yet. Do not enter real
-            patient information.
-          </Notice>
           <Outlet />
         </div>
       </main>

@@ -1,8 +1,16 @@
 # Local environment files may hold project URLs, keys and test passwords.
-# Only the placeholder example is committed.
+# Only the placeholder examples are committed.
 .env*
 !.env.integration.example
+!.env.example
 
 # Supabase CLI local state (project link, cached credentials references)
 supabase/.temp/
 supabase/.branches/
+supabase/.env.integration.local
+
+# Local backups contain clinical data: never commit them.
+backups/
+
+# Wrangler local state
+.wrangler/

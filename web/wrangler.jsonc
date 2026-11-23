@@ -1,0 +1,19 @@
+// Cloudflare Workers static-assets deployment of the built site (dist/).
+// Deploy: npm run deploy:cloudflare   (builds, then wrangler deploy)
+{
+  // Must match the existing Worker: https://oglog-beta.<account>.workers.dev
+  "name": "oglog-beta",
+  // On or after 2025-04-01, so page navigations that match no file are served
+  // index.html by the asset layer (flag assets_navigation_prefers_asset_serving).
+  "compatibility_date": "2026-10-01",
+  // Only runs for NON-navigation requests that match no file (e.g. a missing
+  // /assets/*.js): answers 404 instead of serving the HTML page.
+  "main": "worker/index.ts",
+  "assets": {
+    "directory": "./dist",
+    // Browser routes such as /reset-password?code=… and /auth/confirm?token_hash=…
+    // load index.html (200), keeping the query string; React Router takes over.
+    "not_found_handling": "single-page-application"
+  },
+  "observability": { "enabled": false }
+}

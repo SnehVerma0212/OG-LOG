@@ -1,48 +1,63 @@
-import { Badge, Card, Notice, PageHeader } from '../components/ui';
+import { useState } from 'react';
+
+import { DataCard } from '../account/DataCard';
+import { TwoStepCard } from '../account/TwoStepCard';
+import { useAuthService, useAuthState } from '../auth/AuthContext';
+import { NewPasswordForm } from '../auth/NewPasswordForm';
+import { Badge, Button, Card, PageHeader } from '../components/ui';
+import { useNotify } from '../lib/notifications';
 import { useRepository } from '../data/RepositoryContext';
+import { useAsync } from '../lib/useAsync';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
-
-const PLANNED = <Badge label="Not available yet" />;
-
-function Row({ label, description }: { label: string; description: string }) {
-  return (
-    <div className="settings-row">
-      <div className="settings-row__text">
-        <span>{label}</span>
-        <span className="caption">{description}</span>
-      </div>
-      {PLANNED}
-    </div>
-  );
-}
 
 export function SettingsPage() {
   useDocumentTitle('Settings');
   const repository = useRepository();
+  const auth = useAuthService();
+  const authState = useAuthState();
+  const email = authState.status === 'signedIn' ? authState.user.email : null;
+  const notify = useNotify();
+  const [passwordChanged, setPasswordChanged] = useState(false);
+  const mfa = useAsync(() => auth.mfaStatus(), [auth]);
+  const mfaEnrolled = mfa.state.status === 'ready' ? mfa.state.data.enrolled : null;
 
   return (
     <>
       <PageHeader title="Settings" />
 
-      <Notice title="Accounts and security are not implemented yet">
-        This is the website foundation. There is no sign-in, no server storage and no data protection yet. None of
-        the features below are active.
-      </Notice>
-
-      <Card title="Profile">
-        <Row label="Your profile" description="Name and email for your account." />
+      <Card title="Account">
+        <div className="settings-row">
+          <div className="settings-row__text">
+            <span>Signed in</span>
+            <span className="caption">{email ?? 'Your account'}</span>
+          </div>
+          <Button variant="secondary" onClick={() => void auth.signOut()}>
+            Sign Out
+          </Button>
+        </div>
       </Card>
 
-      <Card title="Sign-in and Passkeys">
-        <Row label="Passkeys" description="Sign in with a passkey. Face ID or Touch ID stays on your device." />
-        <Row label="Active sessions" description="See where you are signed in and sign out other devices." />
-        <Row label="Account recovery" description="Regain access if you lose your passkey." />
+      <Card title="Change Password">
+        {passwordChanged ? (
+          <p className="callout" role="status">
+            Your password was changed. Use the new password next time you sign in.
+          </p>
+        ) : null}
+        <NewPasswordForm
+          askCurrent
+          askCode={mfaEnrolled === true}
+          submitLabel="Change Password"
+          onSubmit={(newPassword, currentPassword, code) => auth.changePassword(currentPassword, newPassword, code)}
+          onSuccess={() => {
+            setPasswordChanged(true);
+            notify('Password changed.');
+          }}
+        />
       </Card>
 
-      <Card title="Your Data">
-        <Row label="Export" description="Download a copy of your logbook." />
-        <Row label="Delete account" description="Permanently delete your account and records." />
-      </Card>
+      <TwoStepCard enrolled={mfaEnrolled} onChange={mfa.retry} />
+
+      <DataCard mfaEnrolled={mfaEnrolled === true} />
 
       <Card title="About OG-LOG">
         <p className="callout">
@@ -53,7 +68,7 @@ export function SettingsPage() {
             <span>Data storage</span>
             <span className="caption">{repository.storageDescription}</span>
           </div>
-          <Badge label="Demo" tone="neutral" />
+          <Badge label={repository.kind === 'sample' ? 'Demo' : 'Development'} tone="neutral" />
         </div>
       </Card>
     </>

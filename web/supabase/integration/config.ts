@@ -2,6 +2,8 @@
 // web/.env.integration.local (git-ignored). Values are never logged: every
 // message names a variable, never its contents.
 
+import { isPrivilegedKey } from '../../src/lib/supabaseKeys';
+
 export interface IntegrationConfig {
   url: string;
   publishableKey: string;
@@ -63,19 +65,5 @@ export function readIntegrationConfig(env: Record<string, string | undefined>): 
 }
 
 // Secret keys bypass Row Level Security, which would make every isolation test
-// meaningless, and must never be handled by test or browser code.
-export function isPrivilegedKey(key: string): boolean {
-  if (key.startsWith('sb_secret_')) {
-    return true;
-  }
-  const parts = key.split('.');
-  if (parts.length === 3) {
-    try {
-      const payload = JSON.parse(atob(parts[1]!.replace(/-/g, '+').replace(/_/g, '/'))) as { role?: unknown };
-      return payload.role !== 'anon';
-    } catch {
-      return true;
-    }
-  }
-  return false;
-}
+// meaningless. The same check guards the website's configuration.
+export { isPrivilegedKey };

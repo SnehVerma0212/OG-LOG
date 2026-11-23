@@ -11,14 +11,17 @@ const sharedDomain = fileURLToPath(new URL('../src/domain', import.meta.url));
 const sharedUtils = fileURLToPath(new URL('../src/utils', import.meta.url));
 const sharedSingleFlight = `${sharedUtils}/singleFlight.ts`;
 const webRoot = fileURLToPath(new URL('.', import.meta.url));
+// The Excel export's zip library without blob: Web Workers (blocked by the CSP).
+const fflateWithoutWorkers = fileURLToPath(new URL('./src/lib/fflateWithoutWorkers.ts', import.meta.url));
 
 export default defineConfig(({ mode }) => ({
   plugins: [react()],
   resolve: {
-    alias: {
-      '@og-log/domain': sharedDomain,
-      '@og-log/single-flight': sharedSingleFlight,
-    },
+    alias: [
+      { find: '@og-log/domain', replacement: sharedDomain },
+      { find: '@og-log/single-flight', replacement: sharedSingleFlight },
+      { find: /^fflate$/, replacement: fflateWithoutWorkers },
+    ],
   },
   server: {
     // The dev/test server may read the web app and the shared folders only, so
@@ -40,7 +43,7 @@ export default defineConfig(({ mode }) => ({
         }
       : {
           environment: 'jsdom',
-          include: ['src/**/*.test.{ts,tsx}', 'supabase/tests/**/*.test.ts'],
+          include: ['src/**/*.test.{ts,tsx}', 'supabase/tests/**/*.test.ts', 'scripts/**/*.test.ts'],
           setupFiles: ['./src/test/setup.ts'],
           restoreMocks: true,
         },

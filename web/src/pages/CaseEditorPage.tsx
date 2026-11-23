@@ -20,9 +20,20 @@ import { createSingleFlight } from '@og-log/single-flight';
 import { StatusBadge } from '../components/CaseList';
 import { ChoiceChips, TextAreaField, TextField } from '../components/forms';
 import { Button, ButtonLink, Card, EmptyState, Loading, PageHeader } from '../components/ui';
-import { CaseNotFoundError, CaseValidationError, DuplicateReferenceError } from '../data/caseRepository';
+import {
+  CaseNotFoundError,
+  CaseSaveError,
+  CaseValidationError,
+  ConcurrentUpdateError,
+  DuplicateReferenceError,
+  SessionExpiredError,
+} from '../data/caseRepository';
+import { databaseLimitErrors } from '../data/caseLimits';
 import { useRepository } from '../data/RepositoryContext';
+import { generateId } from '../lib/ids';
 import { useNotify } from '../lib/notifications';
+import { SectionPhotos } from '../photos/SectionPhotos';
+import { useCasePhotos } from '../photos/useCasePhotos';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 
 type LoadState = 'loading' | 'ready' | 'notFound' | 'error';
@@ -55,9 +66,15 @@ export function CaseEditorPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [saveGuard] = useState(createSingleFlight);
+  // A new case keeps one ID for every save attempt, so retrying after a lost
+  // response cannot create a second copy.
+  const [newCaseId] = useState(generateId);
+  const [loadedUpdatedAt, setLoadedUpdatedAt] = useState<string | undefined>(undefined);
   const [activeSection, setActiveSection] = useState<SectionKey>('preop');
   const leavingAfterSave = useRef(false);
   const summaryRef = useRef<HTMLDivElement>(null);
+  // Photos attach only to a case the database has saved and returned.
+  const photos = useCasePhotos(caseId && loadState === 'ready' ? caseId : null);
 
   useEffect(() => {
     if (!caseId) {
@@ -77,6 +94,7 @@ export function CaseEditorPage() {
         setValues(loaded);
         setBaseline(loaded);
         setStatus(record.status);
+        setLoadedUpdatedAt(record.updatedAt);
         setLoadState('ready');
       },
       () => active && setLoadState('error'),
@@ -125,7 +143,7 @@ export function CaseEditorPage() {
     }));
   }
 
-  async function save(nextStatus: CaseStatus, destination: 'list' | 'details', message: string) {
+  async function save(nextStatus: CaseStatus, destination: 'list' | 'details' | 'editor', message: string) {
     if (leavingAfterSave.current) {
       return; // Already saved; navigation is under way.
     }
@@ -134,13 +152,15 @@ export function CaseEditorPage() {
         return { kind: 'skipped' };
       }
       const input = toCaseInput(values, nextStatus);
-      const found = validateCase(input);
+      const found = { ...validateCase(input), ...databaseLimitErrors(input) };
       if (hasErrors(found)) {
         return { kind: 'invalid', errors: found };
       }
       setBusy(true);
       try {
-        const record = caseId ? await repository.updateCase(caseId, input) : await repository.createCase(input);
+        const record = caseId
+          ? await repository.updateCase(caseId, input, { expectedUpdatedAt: loadedUpdatedAt })
+          : await repository.createCase(input, { id: newCaseId });
         // Set before the guard is released, so a click that lands between
         // saving and leaving the page cannot save a second copy.
         leavingAfterSave.current = true;
@@ -152,7 +172,12 @@ export function CaseEditorPage() {
         if (error instanceof DuplicateReferenceError) {
           return { kind: 'invalid', errors: { reference: 'Another case already uses this reference.' } };
         }
-        if (error instanceof CaseNotFoundError) {
+        if (
+          error instanceof CaseNotFoundError ||
+          error instanceof ConcurrentUpdateError ||
+          error instanceof CaseSaveError ||
+          error instanceof SessionExpiredError
+        ) {
           return { kind: 'failed', message: error.message };
         }
         return { kind: 'failed', message: 'The case could not be saved. Nothing was changed. Please try again.' };
@@ -165,7 +190,9 @@ export function CaseEditorPage() {
     }
     if (outcome.kind === 'saved') {
       notify(message);
-      navigate(destination === 'list' ? '/cases' : `/cases/${outcome.record.id}`);
+      const paths = { list: '/cases', details: `/cases/${outcome.record.id}`, editor: `/cases/${outcome.record.id}/edit` };
+      // Replace the new-case page in history: Back should not reopen an empty form.
+      navigate(paths[destination], { replace: destination === 'editor' });
       return;
     }
     if (outcome.kind === 'invalid') {
@@ -183,6 +210,11 @@ export function CaseEditorPage() {
 
   function onSubmit(event: FormEvent) {
     event.preventDefault();
+    if (isNew) {
+      // Stay in the editor, now for the saved draft, so photos can be added.
+      void save(status, 'editor', 'Draft saved. You can now add photos.');
+      return;
+    }
     void save(status, 'list', status === 'completed' ? 'Changes saved.' : 'Draft saved.');
   }
 
@@ -327,6 +359,28 @@ export function CaseEditorPage() {
             />
           );
         })}
+        {caseId ? (
+          // All three stay mounted (inactive ones hidden), so photos chosen but
+          // not yet uploaded survive moving between sections.
+          SECTIONS.map((item) => (
+            <div key={item.key} hidden={item.key !== section.key}>
+              <SectionPhotos
+                caseId={caseId}
+                section={item.key}
+                sectionLabel={item.label}
+                state={photos.state}
+                onAdded={photos.added}
+                onRemoved={photos.removed}
+                onReload={photos.reload}
+              />
+            </div>
+          ))
+        ) : (
+          <p className="callout photos">
+            Photos: save this case as a draft first. Saving gives it a permanent ID; you then stay here and can add
+            Preoperative, OT Record and Postoperative photos.
+          </p>
+        )}
         <div className="grid-2">
           <Button
             variant="secondary"

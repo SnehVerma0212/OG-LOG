@@ -10,16 +10,22 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --mode integration"
+    "test:integration": "vitest run --mode integration",
+    "backup": "bash scripts/backup.sh",
+    "backup:verify": "bash scripts/verify-backup.sh",
+    "restore:local": "bash scripts/restore-local.sh",
+    "admin:initial-password": "node scripts/initial-password.mjs",
+    "deploy:cloudflare": "npm run build && npx --yes wrangler@4.151.1 deploy"
   },
   "dependencies": {
+    "@supabase/supabase-js": "2.118.0",
     "react": "19.3.1",
     "react-dom": "19.3.1",
-    "react-router": "7.18.5"
+    "react-router": "7.18.5",
+    "write-excel-file": "4.1.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.14",
-    "@supabase/supabase-js": "2.118.0",
     "@testing-library/dom": "10.4.2",
     "@testing-library/react": "16.3.3",
     "@testing-library/user-event": "14.6.8",
@@ -27,7 +33,9 @@
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "@vitejs/plugin-react": "6.1.2",
+    "fflate": "0.8.3",
     "jsdom": "29.1.1",
+    "read-excel-file": "9.3.10",
     "typescript": "~6.0.3",
     "vite": "8.3.5",
     "vitest": "5.0.5"

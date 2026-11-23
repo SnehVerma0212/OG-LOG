@@ -53,7 +53,12 @@ describe.each(SUPABASE_DEFAULTS)('with %s Supabase defaults', (defaults) => {
 
   describe('schema setup', () => {
     it('applies the migration on a Supabase-like database', () => {
-      expect(db.migrationNames()).toEqual(['../migrations/20261031120000_case_logbook_schema.sql']);
+      expect(db.migrationNames()).toEqual([
+        '../migrations/20261031120000_case_logbook_schema.sql',
+        '../migrations/20261101120000_case_photo_storage.sql',
+        '../migrations/20261102120000_initial_password_change.sql',
+        '../migrations/20261103120000_account_security.sql',
+      ]);
     });
 
     it('enables Row Level Security on every user-data table', async () => {
@@ -62,6 +67,7 @@ describe.each(SUPABASE_DEFAULTS)('with %s Supabase defaults', (defaults) => {
          where relnamespace = 'public'::regnamespace and relkind = 'r' order by relname`,
       );
       expect(tables).toEqual([
+        { relname: 'audit_events', relrowsecurity: true },
         { relname: 'case_attachments', relrowsecurity: true },
         { relname: 'cases', relrowsecurity: true },
         { relname: 'profiles', relrowsecurity: true },
@@ -433,8 +439,11 @@ describe.each(SUPABASE_DEFAULTS)('with %s Supabase defaults', (defaults) => {
         expect(await query('select id from public.cases')).toEqual([]);
         expect(await query('select id from public.profiles')).toEqual([]);
       });
+      // Refused by Row Level Security (no profile, so the first-password
+      // policy fails closed) before the foreign key to auth.users is checked.
       const insert = await failure(db.asUser(ghost, (query) => createCase(query)));
-      expect(insert.code).toBe('23503');
+      expect(insert.code).toBe('42501');
+      expect(await db.admin('select id from public.cases where owner_id = $1', [ghost])).toEqual([]);
     });
   });
 

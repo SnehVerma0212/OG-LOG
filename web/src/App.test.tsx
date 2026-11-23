@@ -11,8 +11,9 @@ describe('application shell', () => {
   it('shows the dashboard with sample data clearly labelled as demo data', async () => {
     renderApp('/');
     expect(await screen.findByRole('heading', { level: 1, name: 'Dashboard' })).toBeTruthy();
-    expect(screen.getByText('Demo mode: sample data only')).toBeTruthy();
-    expect(screen.getByText(/lost when the page reloads/, { selector: '.notice__message' })).toBeTruthy();
+    // Where the data lives stays visible in the sidebar; no warning banner.
+    expect(screen.getByText(/lost when the page reloads/, { selector: '.caption' })).toBeTruthy();
+    expect(screen.queryByText(/Development beta|Demo mode/)).toBeNull();
     expect(await screen.findByText('Total Cases: 5')).toBeTruthy();
     expect(screen.getByText('Drafts: 2')).toBeTruthy();
     expect(screen.getAllByText(/Ref SAMPLE-00\d/).length).toBeGreaterThan(0);
@@ -94,7 +95,7 @@ describe('New Case', () => {
     expect(await repository.countCases()).toBe(0);
   });
 
-  it('saves a draft, then lists it in My Cases with a confirmation', async () => {
+  it('saves a draft, stays in the editor for it, then lists it in My Cases', async () => {
     const user = userEvent.setup();
     const repository = new InMemoryCaseRepository();
     const { router } = renderApp('/cases/new', repository);
@@ -110,8 +111,11 @@ describe('New Case', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Save Draft' }));
 
-    await waitFor(() => expect(router.state.location.pathname).toBe('/cases'));
-    expect(await screen.findByText('Draft saved.')).toBeTruthy();
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/cases\/[0-9a-f-]{36}\/edit$/));
+    expect(await screen.findByText('Draft saved. You can now add photos.')).toBeTruthy();
+    expect(await screen.findByRole('heading', { level: 1, name: 'Edit Case' })).toBeTruthy();
+
+    await user.click(within(mainNav()).getByRole('link', { name: 'My Cases' }));
     expect(await screen.findByRole('link', { name: /Synthetic test procedure.*Draft/ })).toBeTruthy();
     const [saved] = await repository.listCases();
     expect(saved).toMatchObject({ procedure: 'Synthetic test procedure', status: 'draft' });
@@ -134,7 +138,7 @@ describe('New Case', () => {
 
     await waitFor(() => expect(router.state.location.pathname).toMatch(/^\/cases\/[0-9a-f-]{36}$/));
     expect(await screen.findByText('Case marked as completed.')).toBeTruthy();
-    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(await screen.findByText('Completed')).toBeTruthy();
   });
 
   it('asks before discarding unsaved changes', async () => {
@@ -158,7 +162,7 @@ describe('New Case', () => {
     await user.type(await screen.findByRole('textbox', { name: 'Procedure' }), 'Synthetic procedure');
     const save = screen.getByRole('button', { name: 'Save Draft' });
     await Promise.all([user.click(save), user.click(save), user.click(save)]);
-    await screen.findByText('Draft saved.');
+    await screen.findByText('Draft saved. You can now add photos.');
     expect(await repository.countCases()).toBe(1);
   });
 });
@@ -220,30 +224,98 @@ describe('Case details', () => {
     expect((await repository.getCase(created.id))?.procedure).toBe('After');
   });
 
+  it('refuses to overwrite a case that changed elsewhere after it was opened', async () => {
+    const user = userEvent.setup();
+    const repository = new InMemoryCaseRepository();
+    const base = {
+      reference: '',
+      surgeryDate: '2026-10-01',
+      diagnosis: '',
+      role: null,
+      status: 'draft' as const,
+      sections: { preop: {}, ot: {}, postop: {} },
+    };
+    const created = await repository.createCase({ ...base, procedure: 'Original' });
+    renderApp(`/cases/${created.id}/edit`, repository);
+    const procedure = await screen.findByRole('textbox', { name: 'Procedure' });
+
+    await repository.updateCase(created.id, { ...base, procedure: 'Saved in another tab' }); // e.g. a second device
+    await user.clear(procedure);
+    await user.type(procedure, 'Edited here');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+
+    expect((await screen.findByRole('alert')).textContent).toMatch(/changed somewhere else after you opened it/);
+    expect((await repository.getCase(created.id))?.procedure).toBe('Saved in another tab');
+  });
+
+  it('does not create a second copy when a save is retried after a lost response', async () => {
+    const user = userEvent.setup();
+    class LostResponseRepository extends InMemoryCaseRepository {
+      lost = 1;
+      override async createCase(...args: Parameters<InMemoryCaseRepository['createCase']>) {
+        const record = await super.createCase(...args);
+        if (this.lost-- > 0) {
+          throw new Error('Network connection lost.'); // Saved, but the reply never arrived.
+        }
+        return record;
+      }
+    }
+    const repository = new LostResponseRepository();
+    const { router } = renderApp('/cases/new', repository);
+    await user.type(await screen.findByRole('textbox', { name: 'Procedure' }), 'Synthetic procedure');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    expect((await screen.findByRole('alert')).textContent).toMatch(/could not be saved/);
+
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    const [saved] = await repository.listCases();
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/cases/${saved!.id}/edit`));
+    expect(await repository.countCases()).toBe(1);
+  });
+
   it('reports a missing case', async () => {
     renderApp('/cases/00000000-0000-4000-8000-000000000000');
     expect(await screen.findByText('Case not found')).toBeTruthy();
   });
 });
 
-describe('Statistics, Settings and Login placeholder', () => {
+describe('Statistics and Settings', () => {
   it('calculates statistics from the repository', async () => {
     renderApp('/statistics');
     expect(await screen.findByText('Total Cases: 5')).toBeTruthy();
     expect(screen.getByRole('heading', { name: 'Most Frequent Procedures' })).toBeTruthy();
   });
 
-  it('does not claim any security feature is active', async () => {
+  it('shows the account, security and data sections, and no placeholders for unbuilt features', async () => {
     renderApp('/settings');
-    expect(await screen.findByText('Accounts and security are not implemented yet')).toBeTruthy();
-    expect(screen.getAllByText('Not available yet').length).toBeGreaterThanOrEqual(6);
+    expect(await screen.findByText('oglog-test-a@example.com')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Sign Out' }).length).toBeGreaterThan(0);
+    expect(screen.getByRole('region', { name: 'Change Password' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Set Up' })).toBeTruthy(); // Two-step verification
+    expect(screen.getByRole('button', { name: 'Export Records and Photos' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Delete Account' })).toBeTruthy();
+    // Unbuilt features are not shown at all.
+    expect(screen.queryByText('Not available yet')).toBeNull();
+    expect(screen.queryByText(/Passkeys|Active sessions|Your profile/)).toBeNull();
+    // The storage indicator still names the environment (demo data in tests).
+    const storage = screen.getByText('Data storage').closest('.settings-row') as HTMLElement;
+    expect(within(storage).getByText('Demo')).toBeTruthy();
   });
 
-  it('renders the sign-in page as a disabled placeholder', async () => {
-    renderApp('/login');
-    expect(await screen.findByText('Sign-in is not available yet')).toBeTruthy();
-    expect((screen.getByRole('button', { name: 'Sign in with a passkey' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Email me a sign-in code' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByLabelText('Email') as HTMLInputElement).disabled).toBe(true);
+  it('updates the dashboard totals from saved records after creating a case', async () => {
+    const user = userEvent.setup();
+    const repository = new InMemoryCaseRepository();
+    const { router } = renderApp('/', repository);
+    expect(await screen.findByText('Total Cases: 0')).toBeTruthy();
+    expect(screen.getByText('No cases yet')).toBeTruthy();
+
+    await user.click(screen.getAllByRole('link', { name: 'Create First Case' })[0]!);
+    await user.type(await screen.findByRole('textbox', { name: 'Procedure' }), 'Synthetic procedure');
+    await user.click(screen.getByRole('button', { name: 'Save Draft' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/edit$/));
+
+    await user.click(within(mainNav()).getByRole('link', { name: 'Dashboard' }));
+    expect(await screen.findByText('Total Cases: 1')).toBeTruthy();
+    expect(screen.getByText('Drafts: 1')).toBeTruthy();
+    expect(screen.getByRole('link', { name: /Synthetic procedure/ })).toBeTruthy();
   });
 });

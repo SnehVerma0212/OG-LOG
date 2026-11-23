@@ -56,14 +56,42 @@ export class TestDatabase {
     return (await this.db.query<T>(sql, params)).rows;
   }
 
-  // Simulates Supabase Auth creating an account.
-  async createUser(email: string): Promise<string> {
-    const [row] = await this.admin<{ id: string }>('insert into auth.users (email) values ($1) returning id', [email]);
+  // Simulates Supabase Auth creating an account. By default the account has
+  // already replaced its initial password, like any account in normal use;
+  // first-login tests pass `initialPasswordPending: true` to keep the flag the
+  // database sets on new accounts.
+  async createUser(email: string, { initialPasswordPending = false } = {}): Promise<string> {
+    const [row] = await this.admin<{ id: string }>(
+      "insert into auth.users (email, encrypted_password) values ($1, 'initial-hash') returning id",
+      [email],
+    );
+    if (!initialPasswordPending && (await this.hasColumn('profiles', 'password_change_required'))) {
+      await this.setPassword(row!.id, 'changed-hash');
+    }
     return row!.id;
   }
 
+  // Simulates Supabase Auth storing a new password hash for the user.
+  async setPassword(userId: string, hash: string): Promise<void> {
+    await this.admin('update auth.users set encrypted_password = $2 where id = $1', [userId, hash]);
+  }
+
+  private async hasColumn(table: string, column: string): Promise<boolean> {
+    const rows = await this.admin(
+      "select 1 from information_schema.columns where table_schema = 'public' and table_name = $1 and column_name = $2",
+      [table, column],
+    );
+    return rows.length > 0;
+  }
+
+  // A normal session (assurance level aal1: password only).
   asUser<T>(userId: string, work: (query: Query) => Promise<T>): Promise<T> {
-    return this.withRole('authenticated', { sub: userId, role: 'authenticated' }, work);
+    return this.withRole('authenticated', { sub: userId, role: 'authenticated', aal: 'aal1' }, work);
+  }
+
+  // A session that has also completed two-step verification.
+  asUserWithSecondStep<T>(userId: string, work: (query: Query) => Promise<T>): Promise<T> {
+    return this.withRole('authenticated', { sub: userId, role: 'authenticated', aal: 'aal2' }, work);
   }
 
   // A signed-in role with arbitrary claims, e.g. a malformed or stale `sub`.

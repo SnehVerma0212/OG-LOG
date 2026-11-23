@@ -7,8 +7,13 @@ import { createSingleFlight } from '@og-log/single-flight';
 
 import { StatusBadge } from '../components/CaseList';
 import { Button, ButtonLink, Card, EmptyState, Loading, LoadError, PageHeader } from '../components/ui';
+import { SessionExpiredError } from '../data/caseRepository';
 import { useRepository } from '../data/RepositoryContext';
 import { useNotify } from '../lib/notifications';
+import { PhotoError } from '../photos/photoStore';
+import { usePhotoStore } from '../photos/PhotoStoreContext';
+import { SectionPhotos } from '../photos/SectionPhotos';
+import { useCasePhotos } from '../photos/useCasePhotos';
 import { useAsync } from '../lib/useAsync';
 import { useDocumentTitle } from '../lib/useDocumentTitle';
 
@@ -16,16 +21,18 @@ export function CaseDetailsPage() {
   useDocumentTitle('Case Details');
   const { caseId = '' } = useParams();
   const repository = useRepository();
+  const photoStore = usePhotoStore();
   const navigate = useNavigate();
   const notify = useNotify();
   const [deleteGuard] = useState(createSingleFlight);
   const [deleting, setDeleting] = useState(false);
   const { state, retry } = useAsync(() => repository.getCase(caseId), [repository, caseId]);
+  const photos = useCasePhotos(caseId);
 
   async function confirmDelete() {
     if (
       !window.confirm(
-        'Delete this case? This permanently removes the case and all three of its sections. This cannot be undone.',
+        'Delete this case? This permanently removes the case, all three of its sections and all of its photos. This cannot be undone.',
       )
     ) {
       return;
@@ -33,12 +40,18 @@ export function CaseDetailsPage() {
     await deleteGuard.run(async () => {
       setDeleting(true);
       try {
+        // Photo files first: if that fails, the case and its records stay intact.
+        await photoStore.deleteCasePhotos(caseId);
         await repository.deleteCase(caseId);
         notify('Case deleted.');
         navigate('/cases');
-      } catch {
+      } catch (error) {
         setDeleting(false);
-        window.alert('The case could not be deleted. Please try again.');
+        if (error instanceof SessionExpiredError) {
+          return; // The sign-in page takes over.
+        }
+        photos.reload();
+        window.alert(error instanceof PhotoError ? error.message : 'The case could not be deleted. Please try again.');
       }
     });
   }
@@ -106,6 +119,15 @@ export function CaseDetailsPage() {
                 <Detail key={key} term={key} value={fields[key]} />
               ))}
             </dl>
+            <SectionPhotos
+              caseId={record.id}
+              section={section.key}
+              sectionLabel={section.label}
+              state={photos.state}
+              onAdded={photos.added}
+              onRemoved={photos.removed}
+              onReload={photos.reload}
+            />
           </Card>
         );
       })}
